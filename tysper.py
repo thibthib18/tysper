@@ -14,6 +14,8 @@ import threading
 from pathlib import Path
 from enum import Enum, auto
 
+import subprocess
+
 import numpy as np
 import sounddevice as sd
 from openai import OpenAI
@@ -96,7 +98,7 @@ class Tysper:
             text = self._transcribe(audio)
             if text:
                 self.log.info("📝 Transcription: %s", text)
-                # TODO Phase 3: xdotool type
+                self._type_text(text)
 
             self.state = State.IDLE
 
@@ -116,6 +118,19 @@ class Tysper:
             wf.writeframes(audio.tobytes())
         buf.seek(0)
         return buf.read()
+
+    def _type_text(self, text: str):
+        """Inject text into the focused window via xdotool."""
+        try:
+            subprocess.run(
+                ["xdotool", "type", "--clearmodifiers", "--delay", "0", text],
+                check=True,
+            )
+            self.log.info("⌨️  Typed %d characters", len(text))
+        except subprocess.CalledProcessError as e:
+            self.log.error("xdotool error: %s", e)
+        except FileNotFoundError:
+            self.log.error("xdotool not found — install with: sudo apt install xdotool")
 
     def _transcribe(self, audio: np.ndarray) -> str | None:
         """Send audio to Whisper API, return transcription text."""
