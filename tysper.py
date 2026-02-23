@@ -16,6 +16,7 @@ from enum import Enum, auto
 
 import numpy as np
 import sounddevice as sd
+from openai import OpenAI
 
 # ---------------------------------------------------------------------------
 # Config
@@ -24,6 +25,7 @@ SAMPLE_RATE = 16000  # 16kHz — ideal for Whisper
 CHANNELS = 1
 PIDFILE = Path("/tmp/tysper.pid")
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+WHISPER_MODEL = "whisper-1"
 
 # ---------------------------------------------------------------------------
 # State machine
@@ -42,6 +44,7 @@ class Tysper:
         self.state = State.IDLE
         self.audio_chunks: list[np.ndarray] = []
         self.stream: sd.InputStream | None = None
+        self.client = OpenAI()  # reads OPENAI_API_KEY from env
         self.log = logging.getLogger("tysper")
 
     # -- Audio recording ----------------------------------------------------
@@ -90,28 +93,51 @@ class Tysper:
                 self.state = State.IDLE
                 return
 
-            # Phase 1: just save to file for validation
-            self._save_debug_wav(audio)
-
-            # TODO Phase 2: send to Whisper API
-            # TODO Phase 3: xdotool type
+            text = self._transcribe(audio)
+            if text:
+                self.log.info("📝 Transcription: %s", text)
+                # TODO Phase 3: xdotool type
 
             self.state = State.IDLE
 
         elif self.state == State.PROCESSING:
             self.log.info("Still processing, ignoring toggle")
 
-    def _save_debug_wav(self, audio: np.ndarray):
-        """Save recording as WAV for Phase 1 validation."""
+    def _audio_to_wav_bytes(self, audio: np.ndarray) -> bytes:
+        """Convert numpy audio buffer to in-memory WAV bytes."""
+        import io
         import wave
 
-        out_path = Path(tempfile.gettempdir()) / "tysper_last.wav"
-        with wave.open(str(out_path), "wb") as wf:
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
             wf.setnchannels(CHANNELS)
             wf.setsampwidth(2)  # 16-bit = 2 bytes
             wf.setframerate(SAMPLE_RATE)
             wf.writeframes(audio.tobytes())
-        self.log.info("💾 Saved debug recording to %s", out_path)
+        buf.seek(0)
+        return buf.read()
+
+    def _transcribe(self, audio: np.ndarray) -> str | None:
+        """Send audio to Whisper API, return transcription text."""
+        self.log.info("🔄 Sending to Whisper API...")
+        try:
+            wav_bytes = self._audio_to_wav_bytes(audio)
+            import io
+            audio_file = io.BytesIO(wav_bytes)
+            audio_file.name = "recording.wav"  # OpenAI needs a filename with extension
+
+            response = self.client.audio.transcriptions.create(
+                model=WHISPER_MODEL,
+                file=audio_file,
+            )
+            text = response.text.strip()
+            if not text:
+                self.log.warning("Whisper returned empty transcription")
+                return None
+            return text
+        except Exception as e:
+            self.log.error("Whisper API error: %s", e)
+            return None
 
 
 # ---------------------------------------------------------------------------
