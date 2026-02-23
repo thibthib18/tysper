@@ -33,6 +33,7 @@ CHANNELS = 1
 PIDFILE = Path("/tmp/tysper.pid")
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 WHISPER_MODEL = "whisper-1"
+MAX_RECORDING_SECS = 60
 
 # Icon names from the system icon theme (Yaru/Adwaita)
 ICON_IDLE = "audio-input-microphone-symbolic"
@@ -135,6 +136,20 @@ class Tysper:
         self._set_state(State.RECORDING)
         self.log.info("🎙️  Recording started")
 
+        # Schedule auto-discard after MAX_RECORDING_SECS
+        self._recording_timer = threading.Timer(
+            MAX_RECORDING_SECS, self._auto_discard
+        )
+        self._recording_timer.daemon = True
+        self._recording_timer.start()
+
+    def _auto_discard(self):
+        if self.state != State.RECORDING:
+            return
+        self.log.warning("⏰ Max recording duration reached (%ds) — discarding", MAX_RECORDING_SECS)
+        self.stop_recording()
+        self._set_state(State.IDLE)
+
     def stop_recording(self) -> np.ndarray | None:
         if self.stream is None:
             return None
@@ -156,6 +171,7 @@ class Tysper:
             self.start_recording()
 
         elif self.state == State.RECORDING:
+            self._recording_timer.cancel()
             self._set_state(State.PROCESSING)
             audio = self.stop_recording()
             if audio is None:
