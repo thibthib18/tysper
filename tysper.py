@@ -191,24 +191,23 @@ class Tysper:
         return buf.read()
 
     def _type_text(self, text: str):
-        """Inject text into the focused window via clipboard paste."""
+        """Inject text into the focused window via clipboard paste (Wayland-safe)."""
         try:
-            # Copy text to clipboard via xclip
+            # Copy to Wayland clipboard
             subprocess.run(
-                ["xclip", "-selection", "clipboard"],
-                input=text.encode("utf-8"),
+                ["wl-copy", text],
                 check=True,
             )
-            # Simulate Ctrl+V to paste
+            # Simulate Ctrl+V
             subprocess.run(
-                ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
+                ["ydotool", "key", "ctrl+v"],
                 check=True,
             )
             self.log.info("⌨️  Pasted %d characters", len(text))
         except subprocess.CalledProcessError as e:
             self.log.error("Text injection error: %s", e)
         except FileNotFoundError as e:
-            self.log.error("Missing tool: %s — install xdotool and xclip", e)
+            self.log.error("Missing tool: %s — install wl-clipboard and ydotool", e)
 
     def _transcribe(self, audio: np.ndarray) -> str | None:
         """Send audio to Whisper API, return transcription text."""
