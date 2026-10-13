@@ -135,6 +135,37 @@ Toggle from another terminal:
 kill -USR1 $(cat /tmp/tysper.pid)
 ```
 
+## Local transcription (whisper.cpp)
+
+Instead of the OpenAI API, tysper can transcribe locally with [whisper.cpp](https://github.com/ggml-org/whisper.cpp). tysper starts `whisper-server` as a child process, so the model stays loaded between recordings, and stops it when tysper quits.
+
+Build whisper.cpp and download a model:
+
+```bash
+cd ~/Projects/misc/whisper.cpp
+cmake -B build && cmake --build build -j --config Release
+./models/download-ggml-model.sh base.en
+```
+
+Pick the backend with `TYSPER_BACKEND=local` (the default is `openai`), or switch at any time from the tray menu. Only the OpenAI backend needs `OPENAI_API_KEY`.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `TYSPER_BACKEND` | `openai` | `openai` or `local` |
+| `WHISPER_CPP_DIR` | `~/Projects/misc/whisper.cpp` | whisper.cpp checkout (with `build/bin/whisper-server`) |
+| `WHISPER_CPP_MODEL` | `models/ggml-base.en.bin` | Model path, relative to `WHISPER_CPP_DIR` |
+| `TYSPER_LANGUAGE` | `en` | Spoken language, both backends: ISO-639-1 code, or `auto` to detect |
+| `WHISPER_CPP_PORT` | `8178` | Port the local server listens on (127.0.0.1 only) |
+| `WHISPER_CPP_THREADS` | min(8, CPU count) | Inference threads |
+
+Each transcription logs how long it took, for either backend, so you can compare them:
+
+```
+⏱️  local took 0.51s for 5.0s of audio
+```
+
+`*.en` models are English-only. For other languages, use a multilingual model such as `ggml-small.bin` (`./models/download-ggml-model.sh small`).
+
 ## Logs
 
 When running as a systemd service:
@@ -162,4 +193,4 @@ tysper is a Python daemon that:
 
 - **Overwrites clipboard**: The paste-based text injection replaces your current clipboard contents.
 - **Wayland only**: Text injection uses `wl-copy` + `ydotool`, which are Wayland-specific. For X11 sessions, `xdotool type` would work but doesn't handle Unicode well.
-- **Requires network**: Transcription happens via the OpenAI API, so an internet connection is needed.
+- **Requires network** with the OpenAI backend. The local whisper.cpp backend works offline.
